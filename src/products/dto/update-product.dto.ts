@@ -11,6 +11,9 @@ export class UpdateProductDto {
   @IsOptional()
   cost?: number;
 
+  @IsOptional()
+  image?: Buffer; 
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ProductPriceDto)

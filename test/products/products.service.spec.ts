@@ -9,7 +9,7 @@ import { CreateProductDto } from '../../src/products/dto/create-product.dto';
 import { ProductPriceDto } from '../../src/products/dto/product-price.dto';
 import { ProductFilterDto } from '../../src/products/dto/product-filter.dto';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { UpdateProductDto } from 'src/products/dto/update-product.dto';
+import { UpdateProductDto } from '../../src/products/dto/update-product.dto';
 
 describe('ProductsService', () => {
   let service: ProductsService;
@@ -112,6 +112,19 @@ describe('ProductsService', () => {
         BadRequestException,
       );
     });
+
+    it('should throw ConflictException when prices already exist', async () => {
+      const createProductDto: CreateProductDto = {
+        description: 'Test Product',
+        prices: [{ storeId: 1, salePrice: 15.99 }],
+      };
+
+      mockProductStoreRepository.find.mockResolvedValue([{ store: { id: 1 } }]);
+
+      await expect(service.create(createProductDto)).rejects.toThrow(
+        ConflictException,
+      );
+    });
   });
 
   describe('findAll', () => {
@@ -196,6 +209,18 @@ describe('ProductsService', () => {
       expect(mockProductRepository.update).toHaveBeenCalledWith(productId, {
         description: 'Updated Product',
       });
+    });
+
+    it('should throw BadRequestException when no prices are provided in update', async () => {
+      const productId = 1;
+      const updateProductDto: UpdateProductDto = {
+        description: 'Updated Product',
+        prices: [],
+      };
+
+      await expect(service.update(productId, updateProductDto)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

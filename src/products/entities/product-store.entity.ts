@@ -11,7 +11,7 @@ export class ProductStore {
   @JoinColumn({ name: 'productId' })
   product: Product;
 
-  @ManyToOne(() => Store)
+  @ManyToOne(() => Store, { eager: true }) 
   @JoinColumn({ name: 'storeId' })
   store: Store;
 

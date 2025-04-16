@@ -26,18 +26,35 @@ export class ProductsService {
 
   async create(createProductDto: CreateProductDto): Promise<Product> {
     const { prices, ...productData } = createProductDto;
-    
-    if (prices && prices.length === 0) {
-      throw new BadRequestException('At least one price must be provided');
+
+    createProductDto.cost = parseFloat(createProductDto.cost.toFixed(2));
+
+    if (createProductDto.prices) {
+      createProductDto.prices = createProductDto.prices.map(price => ({
+        ...price,
+        salePrice: parseFloat(price.salePrice.toFixed(2))
+      }));
     }
 
+    if (createProductDto.cost !== undefined) {
+      createProductDto.cost = parseFloat(createProductDto.cost.toFixed(2));
+    }
+    
     const product = this.productRepository.create(productData);
     await this.productRepository.save(product);
 
+    if (prices) {
+      const storeIds = prices.map(p => p.storeId);
+      const uniqueStoreIds = new Set(storeIds);
+      if (storeIds.length !== uniqueStoreIds.size) {
+        throw new ConflictException('Duplicate store prices in request');
+      }
+    }
+  
     if (prices && prices.length > 0) {
       await this.addPricesToProduct(product.id, prices);
     }
-
+  
     return this.findOne(product.id);
   }
 
@@ -68,8 +85,13 @@ export class ProductsService {
     }
 
     if (filters.salePrice) {
-      query.andWhere('productStore.salePrice = :salePrice', {
-        salePrice: filters.salePrice,
+      query.andWhere((qb) => {
+        const subQuery = qb.subQuery()
+          .select('ps.productId')
+          .from(ProductStore, 'ps')
+          .where('ps.salePrice = :salePrice', { salePrice: filters.salePrice })
+          .getQuery();
+        return 'product.id IN ' + subQuery;
       });
     }
 
@@ -94,13 +116,28 @@ export class ProductsService {
   async update(id: number, updateProductDto: UpdateProductDto): Promise<Product> {
     const product = await this.findOne(id);
     const { prices, ...productData } = updateProductDto;
-
-    await this.productRepository.update(id, productData);
-
+  
+    const hasProductDataToUpdate = Object.keys(productData).some(
+      key => productData[key] !== undefined && productData[key] !== null
+    );
+  
+    if (hasProductDataToUpdate) {
+      const updateFields = {};
+      for (const [key, value] of Object.entries(productData)) {
+        if (value !== undefined && value !== null) {
+          updateFields[key] = value;
+        }
+      }
+  
+      if (Object.keys(updateFields).length > 0) {
+        await this.productRepository.update(id, updateFields);
+      }
+    }
+  
     if (prices) {
       await this.syncProductPrices(id, prices);
     }
-
+  
     return this.findOne(id);
   }
 
@@ -181,18 +218,26 @@ export class ProductsService {
     if (prices.length === 0) {
       throw new BadRequestException('At least one price must be provided');
     }
-
+  
     const existingPrices = await this.productStoreRepository.find({
       where: { product: { id } },
+      relations: ['store']
     });
-
+  
     const pricesToRemove = existingPrices.filter(
-      ep => !prices.some(p => p.storeId === ep.store.id),
+      ep => {
+        if (!ep.store) {
+          console.warn(`Price ${ep.id} has no store associated`);
+          return true; 
+        }
+        return !prices.some(p => p.storeId === ep.store.id);
+      }
     );
+  
     await this.productStoreRepository.remove(pricesToRemove);
-
+  
     for (const price of prices) {
-      const existingPrice = existingPrices.find(ep => ep.store.id === price.storeId);
+      const existingPrice = existingPrices.find(ep => ep.store?.id === price.storeId);
       if (existingPrice) {
         existingPrice.salePrice = price.salePrice;
         await this.productStoreRepository.save(existingPrice);

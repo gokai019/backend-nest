@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
 import { ProductStore } from './product-store.entity';
 
 @Entity()
@@ -11,6 +11,9 @@ export class Product {
 
   @Column({ type: 'decimal', precision: 13, scale: 3, nullable: true })
   cost: number;
+
+  @Column({ type: 'bytea', nullable: true }) 
+  image: Buffer;
 
   @OneToMany(() => ProductStore, productStore => productStore.product)
   prices: ProductStore[];

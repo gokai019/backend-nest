@@ -14,7 +14,8 @@ export class CreateTables1640000000001 implements MigrationInterface {
     await queryRunner.query(`
       CREATE TABLE "product" (
         "id" SERIAL PRIMARY KEY,
-        "description" character varying(60) NOT NULL,
+        "description" character varying(60) NOT NULL, 
+        "image" bytea NULL,
         "cost" decimal(13,3)
       )
     `);
@@ -31,7 +32,8 @@ export class CreateTables1640000000001 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE UNIQUE INDEX "IDX_product_store_unique" ON "product_store" ("productId", "storeId")
+      CREATE UNIQUE INDEX "IDX_product_store_unique" 
+      ON "product_store" ("productId", "storeId")
     `);
   }
 
