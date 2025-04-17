@@ -1,3 +1,4 @@
+
 # Product Management System - Backend
 
 Este repositório contém o backend do Sistema de Gerenciamento de Produtos, desenvolvido com NestJS e TypeORM.
@@ -7,6 +8,10 @@ Este repositório contém o backend do Sistema de Gerenciamento de Produtos, des
 - Node.js (v16 ou superior)
 - PostgreSQL (v13 ou superior)
 - Docker e Docker Compose (opcional, para ambiente containerizado)
+
+### Recomendações
+
+``` Rodar no docker para facilitar ```
 
 ## Configuração do Ambiente
 
@@ -28,7 +33,7 @@ JWT_SECRET=supersecret
 Execute o seguinte comando para instalar as dependências:
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 ```
 
 ## Executando o Projeto
@@ -130,20 +135,6 @@ docker-compose up -d postgres
 docker-compose logs -f
 ```
 
-## Estrutura do Projeto
-
-```
-src/
-├── controllers/      # Controladores da API
-├── dto/             # Data Transfer Objects
-├── entities/        # Entidades do banco de dados
-├── migrations/      # Migrações do TypeORM
-├── modules/         # Módulos NestJS
-├── repositories/    # Repositórios personalizados
-├── services/        # Serviços de negócios
-└── main.ts          # Ponto de entrada da aplicação
-```
-
 ## Formatação e Linting
 
 ### Formatar o Código
@@ -156,4 +147,9 @@ npm run format
 
 ```bash
 npm run lint
+```
+
+### Rotas Swagger
+```
+https://app.swaggerhub.com/apis-docs/TiagoLima/1.0.0/1.0.0
 ```
