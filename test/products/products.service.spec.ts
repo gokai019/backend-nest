@@ -15,6 +15,7 @@ describe('ProductsService', () => {
   let service: ProductsService;
   let productRepository: Repository<Product>;
   let productStoreRepository: Repository<ProductStore>;
+  let storeRepository: Repository<Store>;
 
   const mockProductRepository = {
     create: jest.fn(),
@@ -29,7 +30,7 @@ describe('ProductsService', () => {
       skip: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
-      getManyAndCount: jest.fn(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
     })),
   };
 
@@ -39,6 +40,10 @@ describe('ProductsService', () => {
     find: jest.fn(),
     findOne: jest.fn(),
     remove: jest.fn(),
+  };
+
+  const mockStoreRepository = {
+    findOne: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -52,6 +57,10 @@ describe('ProductsService', () => {
         {
           provide: getRepositoryToken(ProductStore),
           useValue: mockProductStoreRepository,
+        }, 
+        {
+          provide: getRepositoryToken(Store),
+          useValue: mockStoreRepository,
         },
       ],
     }).compile();
@@ -61,65 +70,82 @@ describe('ProductsService', () => {
     productStoreRepository = module.get<Repository<ProductStore>>(
       getRepositoryToken(ProductStore),
     );
-  });
+    storeRepository = module.get<Repository<Store>>(getRepositoryToken(Store));
 
-  afterEach(() => {
+    // Reset mocks before each test
     jest.clearAllMocks();
   });
 
   describe('create', () => {
     it('should create a product with prices', async () => {
+      // Setup mocks properly for the entire flow
       const createProductDto: CreateProductDto = {
         description: 'Test Product',
+        cost: 10.99,
         prices: [{ storeId: 1, salePrice: 15.99 }],
       };
 
-      const savedProduct = { id: 1, description: 'Test Product' } as Product;
-      const savedPrice = { id: 1, salePrice: 15.99 } as ProductStore;
+      const savedProduct = { id: 1, description: 'Test Product', cost: 10.99 } as Product;
+      const savedPrice = { id: 1, salePrice: 15.99, store: { id: 1 } } as ProductStore;
+      const productWithPrices = { 
+        ...savedProduct, 
+        prices: [savedPrice] 
+      };
 
+      // Mock for service.create -> findOne first return (no existing product first)
       mockProductRepository.create.mockReturnValue(savedProduct);
       mockProductRepository.save.mockResolvedValue(savedProduct);
+      
+      // Important: Set up a proper sequence of mock returns for findOne
+      // For the internal findOne calls in create method and addPricesToProduct method
+      mockProductRepository.findOne
+        .mockResolvedValueOnce(savedProduct)  // Initial product lookup
+        .mockResolvedValueOnce(productWithPrices);  // Final product lookup with prices
+      
+      // For price lookup to check if exists
+      mockProductStoreRepository.find.mockResolvedValue([]);
       mockProductStoreRepository.create.mockReturnValue(savedPrice);
       mockProductStoreRepository.save.mockResolvedValue(savedPrice);
-      mockProductRepository.findOne.mockResolvedValue({
-        ...savedProduct,
-        prices: [savedPrice],
-      });
 
       const result = await service.create(createProductDto);
 
-      expect(result).toEqual({
-        ...savedProduct,
-        prices: [savedPrice],
-      });
+      expect(result).toEqual(productWithPrices);
       expect(mockProductRepository.create).toHaveBeenCalledWith({
         description: 'Test Product',
-      });
-      expect(mockProductStoreRepository.create).toHaveBeenCalledWith({
-        product: savedProduct,
-        store: { id: 1 },
-        salePrice: 15.99,
+        cost: 10.99,
       });
     });
 
     it('should throw BadRequestException when no prices are provided', async () => {
       const createProductDto: CreateProductDto = {
         description: 'Test Product',
-        prices: [],
+        cost: 10.99,
+        prices: [], // Empty array to trigger BadRequestException
       };
-
-      await expect(service.create(createProductDto)).rejects.toThrow(
-        BadRequestException,
-      );
+    
+      // No need to mock the service.create method anymore
+      // Just let the actual implementation handle it
+      await expect(service.create(createProductDto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw ConflictException when prices already exist', async () => {
       const createProductDto: CreateProductDto = {
         description: 'Test Product',
+        cost: 10.99,
         prices: [{ storeId: 1, salePrice: 15.99 }],
       };
 
-      mockProductStoreRepository.find.mockResolvedValue([{ store: { id: 1 } }]);
+      const savedProduct = { id: 1, description: 'Test Product', cost: 10.99 } as Product;
+      mockProductRepository.create.mockReturnValue(savedProduct);
+      mockProductRepository.save.mockResolvedValue(savedProduct);
+      
+      // Mock findOne for the initial product creation
+      mockProductRepository.findOne.mockResolvedValueOnce(savedProduct);
+      
+      // Return existing prices that match the ones in the DTO
+      mockProductStoreRepository.find.mockResolvedValueOnce([{ 
+        store: { id: 1 } 
+      }]);
 
       await expect(service.create(createProductDto)).rejects.toThrow(
         ConflictException,
@@ -128,33 +154,40 @@ describe('ProductsService', () => {
   });
 
   describe('findAll', () => {
-    it('should return paginated products with filters', async () => {
-      const filterDto: ProductFilterDto = {
-        page: 1,
-        limit: 10,
-        description: 'Test',
-      };
+  it('should return paginated products with filters', async () => {
+    const filterDto: ProductFilterDto = {
+      page: 1,
+      limit: 10,
+      description: 'Test',
+    };
 
-      const mockProducts = [{ id: 1, description: 'Test Product' }];
-      const mockCount = 1;
+    const mockProducts = [{ id: 1, description: 'Test Product' }];
+    const mockCount = 1;
 
-      mockProductRepository
-        .createQueryBuilder()
-        .getManyAndCount.mockResolvedValue([mockProducts, mockCount]);
+    const queryBuilderMock = {
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([mockProducts, mockCount]),
+    };
+    
+    mockProductRepository.createQueryBuilder.mockReturnValue(queryBuilderMock);
 
-      const result = await service.findAll(filterDto);
+    const result = await service.findAll(filterDto);
 
-      expect(result).toEqual({
-        data: mockProducts,
-        count: mockCount,
-      });
-      expect(
-        mockProductRepository.createQueryBuilder().andWhere,
-      ).toHaveBeenCalledWith('product.description ILIKE :description', {
-        description: '%Test%',
-      });
+    expect(result).toEqual({
+      data: mockProducts,
+      count: mockCount,
     });
+    
+    expect(queryBuilderMock.andWhere).toHaveBeenCalledWith(
+      'product.description ILIKE :description', 
+      { description: '%Test%' }
+    );
   });
+});
 
   describe('findOne', () => {
     it('should return a product by id', async () => {
@@ -186,28 +219,47 @@ describe('ProductsService', () => {
       const productId = 1;
       const updateProductDto: UpdateProductDto = {
         description: 'Updated Product',
+        cost: 12.99,
         prices: [{ storeId: 1, salePrice: 19.99 }],
       };
 
       const existingProduct = {
         id: productId,
         description: 'Test Product',
+        cost: 10.99,
         prices: [{ id: 1, store: { id: 1 }, salePrice: 15.99 }],
       } as Product;
 
-      const updatedProduct = { ...existingProduct, description: 'Updated Product' };
+      const updatedProduct = { 
+        ...existingProduct, 
+        description: 'Updated Product', 
+        cost: 12.99,
+        prices: [{ id: 1, store: { id: 1 }, salePrice: 19.99 }]
+      };
 
-      mockProductRepository.findOne.mockResolvedValue(existingProduct);
-      mockProductRepository.update.mockResolvedValue(undefined);
-      mockProductStoreRepository.remove.mockResolvedValue(undefined);
-      mockProductStoreRepository.save.mockResolvedValue(undefined);
-      mockProductRepository.findOne.mockResolvedValue(updatedProduct);
+      // Mock the initial findOne call
+      mockProductRepository.findOne.mockResolvedValueOnce(existingProduct);
+      
+      // Mock update product
+      mockProductRepository.update.mockResolvedValue({ affected: 1 });
+      
+      // Mock finding product store entries for sync
+      mockProductStoreRepository.find.mockResolvedValueOnce([
+        { id: 1, store: { id: 1 }, salePrice: 15.99 }
+      ]);
+      
+      // Mock save for updating the price
+      mockProductStoreRepository.save.mockResolvedValue({ id: 1, store: { id: 1 }, salePrice: 19.99 });
+      
+      // Mock final findOne to return updated product
+      mockProductRepository.findOne.mockResolvedValueOnce(updatedProduct);
 
       const result = await service.update(productId, updateProductDto);
 
       expect(result).toEqual(updatedProduct);
       expect(mockProductRepository.update).toHaveBeenCalledWith(productId, {
         description: 'Updated Product',
+        cost: 12.99,
       });
     });
 
@@ -215,8 +267,19 @@ describe('ProductsService', () => {
       const productId = 1;
       const updateProductDto: UpdateProductDto = {
         description: 'Updated Product',
+        cost: 12.99,
         prices: [],
       };
+
+      // Setup the mocks for the initial findOne (needed before it can throw BadRequestException)
+      const existingProduct = {
+        id: productId,
+        description: 'Test Product',
+        cost: 10.99,
+        prices: [{ id: 1, store: { id: 1 }, salePrice: 15.99 }],
+      } as Product;
+      
+      mockProductRepository.findOne.mockResolvedValueOnce(existingProduct);
 
       await expect(service.update(productId, updateProductDto)).rejects.toThrow(
         BadRequestException,

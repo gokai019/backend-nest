@@ -27,6 +27,10 @@ export class ProductsService {
   async create(createProductDto: CreateProductDto): Promise<Product> {
     const { prices, ...productData } = createProductDto;
 
+    if (!prices || prices.length === 0) {
+      throw new BadRequestException('At least one price must be provided');
+    }
+
     createProductDto.cost = parseFloat(createProductDto.cost.toFixed(2));
 
     if (createProductDto.prices) {
@@ -185,7 +189,7 @@ export class ProductsService {
     await this.productStoreRepository.remove(price);
   }
 
-  private async addPricesToProduct(productId: number, prices: ProductPriceDto[]): Promise<void> {
+  public async addPricesToProduct(productId: number, prices: ProductPriceDto[]): Promise<void> {
     const product = await this.findOne(productId);
     const storeIds = prices.map(price => price.storeId);
 
